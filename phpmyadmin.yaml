@@ -1,0 +1,161 @@
+---
+apiVersion: v1
+# diese yaml Datei definiert die Konfiguration für phpMyAdmin und MySQL in einem Kubernetes-Cluster
+# die Datei   enthält Deployments, Services, PersistentVolumeClaims und Secrets
+# sie ermöglicht die Bereitstellung und Verwaltung von phpMyAdmin und MySQL
+# sie ist für die Verwendung mit Minikube oder anderen Kubernetes-Umgebungen geeignet
+# sie ermöglicht die Interaktion mit MySQL über eine Weboberfläche
+# sie definiert die Ressourcen, die für den Betrieb von phpMyAdmin und MySQL erforderlich sind
+# die Datei ist im YAML-Format und folgt den Kubernetes-Spezifikationen
+# sie enthält Konfigurationen für Umgebungsvariablen, Ports und Volumes
+# sie ermöglicht die einfache Verwaltung von Datenbanken über phpMyAdmin. Die Datei ermöglicht jedoch keine Benutzer und Datenbankverwaltung
+ 
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pvc
+  labels:
+    app: mysql
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: phpmyadmin-pvc
+  labels:
+    app: phpmyadmin
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-secret
+type: Opaque
+stringData:
+  mysql-root-password: rootpass
+  mysql-user: user
+  mysql-password: userpass
+  mysql-database: mydb
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  labels:
+    app: mysql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: mysql-root-password
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: mysql-database
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: mysql-user
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: mysql-password
+          volumeMounts:
+            - name: mysql-storage
+              mountPath: /var/lib/mysql
+      volumes:
+        - name: mysql-storage
+          persistentVolumeClaim:
+            claimName: mysql-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  labels:
+    app: mysql
+spec:
+  selector:
+    app: mysql
+  ports:
+    - port: 3306
+      targetPort: 3306
+  clusterIP: None  # Macht es als Headless-Service erreichbar
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phpmyadmin
+  labels:
+    app: phpmyadmin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: phpmyadmin
+  template:
+    metadata:
+      labels:
+        app: phpmyadmin
+    spec:
+      containers:
+        - name: phpmyadmin
+          image: phpmyadmin:latest
+          ports:
+            - containerPort: 80
+          env:
+            - name: PMA_HOST
+              value: "mysql"
+            - name: PMA_PORT
+              value: "3306"
+            - name: PMA_ARBITRARY
+              value: "1"
+          volumeMounts:
+            - name: phpmyadmin-storage
+              mountPath: /sessions
+      volumes:
+        - name: phpmyadmin-storage
+          persistentVolumeClaim:
+            claimName: phpmyadmin-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: phpmyadmin
+  labels:
+    app: phpmyadmin
+spec:
+  selector:
+    app: phpmyadmin
+  ports:
+    - port: 80
+      targetPort: 80
+  type: ClusterIP
